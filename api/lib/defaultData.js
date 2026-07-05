@@ -1,0 +1,61 @@
+export const CURRENT_SEED_VERSION = 2;
+
+export function getDefaultProducts() {
+  return [
+    { id: 'p1', name: '이세계정서 장패드 (세페일)', price: 25000, stock: 12 },
+    { id: 'p2', name: '카후 아크릴키링 (세페일)', price: 8000, stock: 22 },
+    { id: 'p3', name: '리메 아크릴키링 (세페일)', price: 8000, stock: 16 },
+    { id: 'p4', name: '이세계정서 아크릴키링 (세페일)', price: 8000, stock: 12 },
+    { id: 'p5', name: '하루사루히 아크릴키링 (세페일)', price: 8000, stock: 22 },
+    { id: 'p6', name: '코코 아크릴키링 (세페일)', price: 8000, stock: 12 },
+    { id: 'p7', name: '코코 누들스토퍼 (짱고래)', price: 12000, stock: 20 },
+    { id: 'p8', name: '하루사루히 아크릴키링 (짱고래)', price: 6000, stock: 30 },
+    { id: 'p9', name: '카후 회지 (짱고래)', price: 8000, stock: 50 },
+    { id: 'p10', name: '리메 아크릴스탠드액자 (기은)', price: 20000, stock: 2 },
+    { id: 'p11', name: '시엘 엽서 (기은)', price: 1000, stock: 50 },
+    { id: 'p12', name: '아스 엽서 (기은)', price: 1000, stock: 50 },
+    { id: 'p13', name: '카후 아크릴스탠드 (기은)', price: 15000, stock: 15 },
+    { id: 'p14', name: '리메 아크릴스탠드 (기은)', price: 15000, stock: 10 },
+    { id: 'p15', name: '이세계정서 아크릴스탠드 (기은)', price: 15000, stock: 15 },
+    { id: 'p16', name: '하루사루히 아크릴스탠드 (기은)', price: 15000, stock: 10 },
+    { id: 'p17', name: '코코 아크릴스탠드 (기은)', price: 15000, stock: 10 },
+    { id: 'p18', name: '카후 캔뱃지 (기은)', price: 4000, stock: 30 },
+    { id: 'p19', name: '리메 캔뱃지 (기은)', price: 4000, stock: 20 },
+    { id: 'p20', name: '이세계정서 캔뱃지 (기은)', price: 4000, stock: 30 },
+    { id: 'p21', name: '하루사루히 캔뱃지 (기은)', price: 4000, stock: 20 },
+    { id: 'p22', name: '코코 캔뱃지 (기은)', price: 4000, stock: 20 },
+    { id: 'p23', name: '카후 아크릴포토카드 (Ama)', price: 1000, stock: 20 },
+    { id: 'p24', name: '카후 엽서 A (민수)', price: 2000, stock: 8 },
+    { id: 'p25', name: '카후 엽서 B (민수)', price: 2000, stock: 8 },
+    { id: 'p26', name: '카후 띠부씰 (민수)', price: 2000, stock: 5 },
+    { id: 'p27', name: 'V.W.P 스티커 (민수)', price: 4000, stock: 5 },
+    { id: 'p28', name: '카후 스티커 A (민수)', price: 0, stock: 5 },
+    { id: 'p29', name: '카후 스티커 B (민수)', price: 0, stock: 5 },
+    { id: 'p30', name: '카후 스티커 C (민수)', price: 0, stock: 5 },
+    { id: 'p31', name: '카후 스티커 D (민수)', price: 0, stock: 5 },
+    { id: 'p32', name: '카후 아크릴스탠드 (레이)', price: 15000, stock: 25 },
+    { id: 'p33', name: '이세계정서 아크릴스탠드액자 (레이)', price: 15000, stock: 25 },
+    { id: 'p34', name: 'V.W.P 티셔츠 M (나글이)', price: 30000, stock: 4 },
+    { id: 'p35', name: '카후 띠부씰 A (나글이)', price: 2000, stock: 20 },
+    { id: 'p36', name: '카후 띠부씰 B (나글이)', price: 2000, stock: 20 },
+    { id: 'p37', name: '카후 띠부씰 C (나글이)', price: 2000, stock: 20 },
+    { id: 'p38', name: 'V.W.P 스티커 (나글이)', price: 5000, stock: 90 },
+    { id: 'p39', name: '츠미바 스티커 (나글이)', price: 5000, stock: 90 },
+    { id: 'p40', name: '카후 아크릴키링 (나글이)', price: 6000, stock: 25 },
+    { id: 'p41', name: '리메 아크릴키링 (나글이)', price: 6000, stock: 25 },
+    { id: 'p42', name: '이세계정서 아크릴키링 (나글이)', price: 6000, stock: 25 },
+    { id: 'p43', name: '하루사루히 아크릴키링 (나글이)', price: 6000, stock: 25 },
+    { id: 'p44', name: '코코 아크릴키링 (나글이)', price: 6000, stock: 25 },
+  ];
+}
+
+export function getDefaultBundles() {
+  return [
+    { id: 'b1', name: '세페일 아크릴키링 5개 세트', price: 35000, items: [{ productId: 'p2', qty: 1 }, { productId: 'p3', qty: 1 }, { productId: 'p4', qty: 1 }, { productId: 'p5', qty: 1 }, { productId: 'p6', qty: 1 }] },
+    { id: 'b2', name: '기은 아크릴스탠드 5개 세트', price: 70000, items: [{ productId: 'p13', qty: 1 }, { productId: 'p14', qty: 1 }, { productId: 'p15', qty: 1 }, { productId: 'p16', qty: 1 }, { productId: 'p17', qty: 1 }] },
+    { id: 'b3', name: '기은 캔뱃지 5개 세트', price: 15000, items: [{ productId: 'p18', qty: 1 }, { productId: 'p19', qty: 1 }, { productId: 'p20', qty: 1 }, { productId: 'p21', qty: 1 }, { productId: 'p22', qty: 1 }] },
+    { id: 'b4', name: '민수 엽서 2개 세트', price: 3000, items: [{ productId: 'p24', qty: 1 }, { productId: 'p25', qty: 1 }] },
+    { id: 'b5', name: '민수 띠부씰 3개 세트 (랜덤)', price: 2000, items: [{ productId: 'p26', qty: 3 }] },
+    { id: 'b6', name: '나글이 아크릴키링 5개 세트', price: 25000, items: [{ productId: 'p40', qty: 1 }, { productId: 'p41', qty: 1 }, { productId: 'p42', qty: 1 }, { productId: 'p43', qty: 1 }, { productId: 'p44', qty: 1 }] },
+  ];
+}
