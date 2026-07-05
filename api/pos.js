@@ -4,7 +4,22 @@ import { CURRENT_SEED_VERSION, getDefaultBundles, getDefaultProducts } from './l
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+function hasPostgresConnectionString() {
+  return Boolean(
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    process.env.DATABASE_URL,
+  );
+}
+
+function assertPostgresConnectionString() {
+  if (hasPostgresConnectionString()) return;
+  throw new Error('Vercel 환경변수 POSTGRES_URL이 설정되지 않았습니다. Vercel Storage에서 Postgres를 연결하거나 POSTGRES_URL을 Environment Variables에 추가하세요.');
+}
+
 async function initDb() {
+  assertPostgresConnectionString();
   await sql`CREATE TABLE IF NOT EXISTS pos_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`;
   await sql`CREATE TABLE IF NOT EXISTS pos_products (id TEXT PRIMARY KEY, name TEXT NOT NULL, price INTEGER NOT NULL, stock INTEGER NOT NULL)`;
   await sql`CREATE TABLE IF NOT EXISTS pos_bundles (id TEXT PRIMARY KEY, name TEXT NOT NULL, price INTEGER NOT NULL, items JSONB NOT NULL)`;
