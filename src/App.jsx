@@ -83,6 +83,17 @@ export default function App() {
     setLoading(true);
     setError('');
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const cached = await stateRepository.get();
+        if (cached) {
+          applyState(cached);
+          setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
+          return;
+        }
+        setError('오프라인 상태입니다. 저장된 데이터가 없어 상품을 불러올 수 없습니다.');
+        return;
+      }
+
       applyState(await requestJson('/api/pos'));
     } catch (err) {
       if (String(err.message).includes('인증')) logout();
@@ -214,6 +225,14 @@ export default function App() {
   const applyLocalSale = (saleCart) => {
     setProducts((prev) => productsAfterSale(prev, saleCart));
   };
+  const refreshAndSyncOrders = async () => {
+    try {
+      await sync.refreshPendingCount();
+      void sync.syncNow();
+    } catch (err) {
+      console.warn('[sync] failed to refresh pending order count', err);
+    }
+  };
   const finalizeSale = async (method) => {
     if (!cart.length || saving) return;
     setSaving(true);
@@ -240,8 +259,7 @@ export default function App() {
       setSales(nextSales);
       void persistLocalState(nextProducts, bundles, nextSales);
       setCart([]);
-      await sync.refreshPendingCount();
-      void sync.syncNow();
+      void refreshAndSyncOrders();
     } catch (err) {
       alert(err.message || '로컬 주문 저장에 실패했습니다.');
       setError(err.message || '로컬 주문 저장에 실패했습니다.');
@@ -319,8 +337,7 @@ export default function App() {
           lastSyncAt: null,
         });
       }
-      await sync.refreshPendingCount();
-      void sync.syncNow();
+      void refreshAndSyncOrders();
     } catch (err) {
       alert(err.message || '판매 취소 처리에 실패했습니다.');
       setError(err.message || '판매 취소 처리에 실패했습니다.');
