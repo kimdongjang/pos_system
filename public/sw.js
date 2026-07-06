@@ -1,5 +1,5 @@
-const CACHE_NAME = 'booth-pos-app-v2';
-const APP_SHELL_URLS = ['/', '/index.html', '/pos.html'];
+const CACHE_NAME = 'booth-pos-app-v3';
+const APP_SHELL_URLS = ['/', '/index.html'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -39,16 +39,23 @@ async function networkFirstWithAppShellFallback(request) {
     if (response.ok) await cache.put(request, response.clone());
     return response;
   } catch (error) {
-    return (
+    const cached = (
       await cache.match(request) ||
       await cache.match('/index.html') ||
       await cache.match('/')
     );
+
+    return cached || new Response('오프라인 상태입니다. 앱 캐시를 찾을 수 없습니다.', {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    });
   }
 }
 
 async function cacheAppShell(cache) {
-  await cache.addAll(APP_SHELL_URLS);
+  await Promise.all(APP_SHELL_URLS.map((url) => cache.add(url).catch((error) => {
+    console.warn('[service-worker] app shell caching failed', url, error);
+  })));
 
   try {
     const indexResponse = await fetch('/index.html', { cache: 'no-cache' });
