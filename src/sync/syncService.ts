@@ -1,5 +1,6 @@
 import { orderRepository, type OrderRepository } from '../database/orderRepository';
 import { isOnline } from './network';
+import type { OrderPayload } from '../database/dexie';
 
 export interface SyncSnapshot {
   isSyncing: boolean;
@@ -71,7 +72,7 @@ class SyncService {
               'Content-Type': 'application/json',
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
-            body: JSON.stringify(order.payload),
+            body: JSON.stringify(this.toApiPayload(order.localOrderId, order.createdAt, order.payload)),
           });
           const data = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(data.error || '주문 동기화에 실패했습니다.');
@@ -95,6 +96,36 @@ class SyncService {
 
   private emit(): void {
     for (const listener of this.listeners) listener(this.snapshot);
+  }
+
+  private toApiPayload(localOrderId: string, createdAt: string, payload: unknown): unknown {
+    const legacyPayload = payload as { action?: string };
+    if (legacyPayload?.action) return payload;
+
+    const orderPayload = payload as OrderPayload;
+    if (!Array.isArray(orderPayload?.items)) return payload;
+
+    return {
+      action: 'finalizeSale',
+      payload: {
+        localOrderId,
+        createdAt,
+        method: orderPayload.paymentMethod === 'CASH' ? 'cash' : 'transfer',
+        total: orderPayload.totalAmount,
+        cart: orderPayload.items.map((item) => ({
+          type: 'product',
+          id: item.productCode,
+          productCode: item.productCode,
+          goodsType: item.goodsType,
+          vtuberName: item.vtuberName,
+          creatorName: item.creatorName,
+          setGroupName: item.setGroupName ?? null,
+          name: item.productName,
+          unitPrice: item.unitPrice,
+          qty: item.qty,
+        })),
+      },
+    };
   }
 }
 
