@@ -271,6 +271,7 @@ export default function App() {
       setSales(nextSales);
       void persistLocalState(nextProducts, bundles, nextSales);
       setCart([]);
+      alert(`${method === 'cash' ? '현금' : '계좌이체'} 결제가 완료되었습니다.\n결제 금액: ${won(total)}원`);
       void refreshAndSyncOrders();
     } catch (err) {
       alert(err.message || '로컬 주문 저장에 실패했습니다.');
