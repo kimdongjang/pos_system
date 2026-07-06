@@ -12,9 +12,15 @@
     "@tailwindcss/vite": "latest",
     "@vercel/postgres": "^0.10.0",
     "@vitejs/plugin-react": "latest",
+    "dexie": "^4.4.4",
     "react": "latest",
     "react-dom": "latest",
     "tailwindcss": "latest",
     "vite": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^6.0.3"
   }
 }

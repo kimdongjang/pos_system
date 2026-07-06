@@ -74,9 +74,12 @@ async function replaceBundles(bundles) {
   }
 }
 
-async function finalizeSale({ method, total, cart }) {
+async function finalizeSale({ localOrderId, createdAt, method, total, cart }) {
   await initDb();
   if (!Array.isArray(cart) || !cart.length) throw new Error('장바구니가 비어 있습니다.');
+  const saleId = localOrderId || uid();
+  const exists = (await sql`SELECT id FROM pos_sales WHERE id = ${saleId}`).rows[0];
+  if (exists) return;
 
   const products = (await sql`SELECT id, stock FROM pos_products`).rows;
   const soldByProduct = new Map();
@@ -98,7 +101,7 @@ async function finalizeSale({ method, total, cart }) {
     await sql`UPDATE pos_products SET stock = stock - ${sold} WHERE id = ${productId}`;
   }
 
-  const sale = { id: uid(), time: new Date().toISOString(), method, total: Number(total) || 0, lines: cart.map(({ subItems, ...line }) => line) };
+  const sale = { id: saleId, time: createdAt || new Date().toISOString(), method, total: Number(total) || 0, lines: cart.map(({ subItems, ...line }) => line) };
   await sql`INSERT INTO pos_sales (id, time, method, total, lines) VALUES (${sale.id}, ${sale.time}, ${sale.method}, ${sale.total}, ${JSON.stringify(sale.lines)}::jsonb)`;
 }
 

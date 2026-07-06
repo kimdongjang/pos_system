@@ -1,4 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { SyncStatus } from './components/SyncStatus';
+import { orderRepository } from './database/orderRepository';
+import { useSync } from './hooks/useSync';
+import { createLocalOrderId } from './utils/orderId';
 
 const AUTH_TOKEN_KEY = 'pos_admin_token';
 
@@ -32,6 +36,8 @@ export default function App() {
   const [bundleRows, setBundleRows] = useState([{ productId: '', qty: 1 }]);
   const [bundleName, setBundleName] = useState('');
   const [bundlePrice, setBundlePrice] = useState('');
+  const getAuthToken = useCallback(() => sessionStorage.getItem(AUTH_TOKEN_KEY), []);
+  const sync = useSync({ enabled: Boolean(token), getAuthToken });
 
   const applyState = (data) => {
     setProducts(data.products || []);
@@ -139,9 +145,53 @@ export default function App() {
       return line.qty <= 0 ? next.filter((_, i) => i !== index) : next;
     });
   };
-  const finalizeSale = (method) => {
+  const applyLocalSale = (saleCart) => {
+    const soldByProduct = new Map();
+    for (const line of saleCart) {
+      if (line.type === 'product') soldByProduct.set(line.id, (soldByProduct.get(line.id) || 0) + Number(line.qty || 0));
+      if (line.type === 'bundle') {
+        for (const item of line.subItems || []) {
+          soldByProduct.set(item.productId, (soldByProduct.get(item.productId) || 0) + Number(item.qty || 0) * Number(line.qty || 0));
+        }
+      }
+    }
+
+    setProducts((prev) => prev.map((product) => ({
+      ...product,
+      stock: Math.max(0, Number(product.stock || 0) - Number(soldByProduct.get(product.id) || 0)),
+    })));
+  };
+  const finalizeSale = async (method) => {
     if (!cart.length || saving) return;
-    mutate('finalizeSale', { method, total, cart }, () => setCart([]));
+    setSaving(true);
+    setError('');
+    try {
+      const localOrderId = createLocalOrderId();
+      const createdAt = new Date().toISOString();
+      const saleCart = cart.map((line) => ({ ...line }));
+      const orderPayload = { localOrderId, createdAt, method, total, cart: saleCart };
+      const apiPayload = { action: 'finalizeSale', payload: orderPayload };
+
+      await orderRepository.add({
+        localOrderId,
+        createdAt,
+        payload: apiPayload,
+        syncStatus: 'PENDING',
+        retryCount: 0,
+        lastSyncAt: null,
+      });
+
+      applyLocalSale(saleCart);
+      setSales((prev) => [...prev, { id: localOrderId, time: createdAt, method, total, lines: saleCart.map(({ subItems, ...line }) => line) }]);
+      setCart([]);
+      await sync.refreshPendingCount();
+      void sync.syncNow();
+    } catch (err) {
+      alert(err.message || '로컬 주문 저장에 실패했습니다.');
+      setError(err.message || '로컬 주문 저장에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
   };
   const resetDefaults = () => {
     if (!confirm('현재 상품/세트 목록을 지우고 기본 44종 목록으로 되돌릴까요? (판매 내역은 유지됩니다)')) return;
@@ -160,6 +210,32 @@ export default function App() {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = `sales_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
   };
+  const downloadBlob = (content, type, filename) => {
+    const blob = new Blob([content], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const backupOrdersJson = async () => {
+    const orders = await orderRepository.getAll();
+    downloadBlob(JSON.stringify(orders, null, 2), 'application/json;charset=utf-8;', `orders_backup_${new Date().toISOString().slice(0, 10)}.json`);
+  };
+  const backupOrdersCsv = async () => {
+    const orders = await orderRepository.getAll();
+    const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = orders.map((order) => [
+      order.id,
+      order.localOrderId,
+      order.createdAt,
+      order.syncStatus,
+      order.retryCount,
+      order.lastSyncAt || '',
+      JSON.stringify(order.payload),
+    ].map(escapeCsv).join(','));
+    downloadBlob(`\uFEFFid,localOrderId,createdAt,syncStatus,retryCount,lastSyncAt,payload\n${rows.join('\n')}`, 'text/csv;charset=utf-8;', `orders_backup_${new Date().toISOString().slice(0, 10)}.csv`);
+  };
   const voidSale = (sale) => {
     if (!confirm('이 거래를 취소하고 재고를 복구할까요?')) return;
     mutate('voidSale', { id: sale.id });
@@ -177,7 +253,7 @@ export default function App() {
   return <div className="flex h-full flex-col bg-paper text-ink">
     <header className="flex shrink-0 items-center justify-between border-b-[3px] border-amber-pos bg-register px-4 py-2.5 text-[#eef3ee]">
       <div className="flex items-center gap-2.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-pos" /><h1 className="display-font text-base font-semibold tracking-wide">부스 포스기</h1>{saving && <span className="text-xs text-amber-pos">저장 중...</span>}</div>
-      <nav className="flex gap-1.5">{[['pos', '판매'], ['settings', '상품/세트 관리'], ['log', '판매 내역']].map(([key, label]) => <button key={key} onClick={() => setScreen(key)} className={`rounded-md border px-3.5 py-2 text-[13px] ${screen === key ? 'border-amber-pos bg-amber-pos font-bold text-ink' : 'border-white/20 bg-white/10'}`}>{label}</button>)}<button onClick={loadState} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">새로고침</button><button onClick={logout} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">로그아웃</button></nav>
+      <nav className="flex flex-wrap items-center justify-end gap-1.5"><SyncStatus sync={sync} />{[['pos', '판매'], ['settings', '상품/세트 관리'], ['log', '판매 내역']].map(([key, label]) => <button key={key} onClick={() => setScreen(key)} className={`rounded-md border px-3.5 py-2 text-[13px] ${screen === key ? 'border-amber-pos bg-amber-pos font-bold text-ink' : 'border-white/20 bg-white/10'}`}>{label}</button>)}<button onClick={loadState} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">새로고침</button><button onClick={logout} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">로그아웃</button></nav>
     </header>
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
 
@@ -197,6 +273,7 @@ export default function App() {
     {screen === 'settings' && <main className="flex-1 overflow-y-auto p-4 md:p-6"><div className="grid gap-5 xl:grid-cols-2">
       <Panel title="굿즈 목록 (가격 / 수량)"><div className="overflow-x-auto"><table className="w-full border-collapse text-[13px]"><thead><tr className="text-left"><th className="border-b border-line p-1">이름</th><th className="border-b border-line p-1">가격</th><th className="border-b border-line p-1">수량</th><th /></tr></thead><tbody>{products.map((p) => <tr key={p.id}><td className="border-b border-line p-1"><Input value={p.name} onChange={(v) => persistProducts(products.map((x) => x.id === p.id ? { ...x, name: v } : x))} /></td><td className="border-b border-line p-1"><Input type="number" value={p.price} className="w-[78px]" onChange={(v) => persistProducts(products.map((x) => x.id === p.id ? { ...x, price: Number(v) || 0 } : x))} /></td><td className="border-b border-line p-1"><Input type="number" value={p.stock} className="w-[70px]" onChange={(v) => persistProducts(products.map((x) => x.id === p.id ? { ...x, stock: Number(v) || 0 } : x))} /></td><td className="border-b border-line p-1"><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => { if (confirm('이 굿즈를 삭제할까요? 세트 구성에서도 제거됩니다.')) { persistProducts(products.filter((x) => x.id !== p.id)); persistBundles(bundles.map((b) => ({ ...b, items: b.items.filter((it) => it.productId !== p.id) })).filter((b) => b.items.length)); } }}>삭제</button></td></tr>)}</tbody></table></div><button className="mt-2.5 rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={() => persistProducts([...products, { id: uid(), name: '새 굿즈', price: 0, stock: 0 }])}>+ 굿즈 추가</button><button className="ml-2 mt-2.5 rounded-md bg-danger px-3.5 py-2 text-[13px] text-white" onClick={resetDefaults}>기본 44종 목록으로 초기화</button></Panel>
       <Panel title="세트 할인 구성"><div className="space-y-2.5">{bundles.length ? bundles.map((b) => <div key={b.id} className="rounded-lg border border-line bg-[#fbfaf5] p-2.5"><div className="flex justify-between text-[13px] font-bold"><span>{b.name} — {won(b.price)}원</span><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((x) => x.id !== b.id))}>삭제</button></div><div className="mt-1 text-xs text-[#6b6555]">{b.items.map((it) => `${products.find((p) => p.id === it.productId)?.name || '???'} x${it.qty}`).join(', ')}</div></div>) : <p className="text-xs text-[#8a8370]">등록된 세트가 없습니다</p>}</div><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><Input value={bundleName} onChange={setBundleName} placeholder="세트 이름 (예: 아크릴+포카 세트)" />{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select className="flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input type="number" className="w-[60px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: Number(v) || 1 } : r))} /></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><Input type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="세트 판매가 (원)" /><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addBundleToSettings}>세트 저장</button></div></Panel>
+      <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#6b6555]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>
     </div></main>}
 
     {screen === 'log' && <main className="flex-1 overflow-y-auto p-4 md:p-6"><div className="mb-4 grid gap-3.5 md:grid-cols-4"><Stat label="총 판매액" value={`${won(stats.total)}원`} /><Stat label="현금" value={`${won(stats.cash)}원`} /><Stat label="계좌이체" value={`${won(stats.transfer)}원`} /><Stat label="거래 건수" value={sales.length} /></div><div className="mb-2.5 flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={exportCsv}>CSV로 내보내기</button><button className="rounded-md bg-danger px-3 py-2 text-xs text-white" onClick={() => confirm('모든 판매 내역을 삭제할까요? (재고는 복구되지 않습니다)') && mutate('clearSales')}>판매 내역 초기화</button></div><table className="w-full border-collapse bg-white text-[12.5px]"><thead><tr className="bg-register text-left text-[#eef3ee]"><th className="p-2">시간</th><th className="p-2">결제수단</th><th className="p-2">구성</th><th className="p-2">금액</th><th /></tr></thead><tbody>{sales.slice().reverse().map((s) => <tr key={s.id}><td className="mono border-b border-line p-2">{new Date(s.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</td><td className="border-b border-line p-2"><span className={`rounded px-2 py-0.5 text-[11px] text-white ${s.method === 'cash' ? 'bg-cash' : 'bg-transfer'}`}>{s.method === 'cash' ? '현금' : '계좌이체'}</span></td><td className="border-b border-line p-2">{s.lines.map((l) => `${l.name} x${l.qty}`).join(', ')}</td><td className="mono border-b border-line p-2">{won(s.total)}원</td><td className="border-b border-line p-2"><button className="rounded border border-danger px-2 py-1 text-[10px] text-danger" onClick={() => voidSale(s)}>취소</button></td></tr>)}</tbody></table></main>}
