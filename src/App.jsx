@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { SyncStatus } from './components/SyncStatus';
 import { orderRepository } from './database/orderRepository';
+import { stateRepository } from './database/stateRepository';
 import { useSync } from './hooks/useSync';
 import { createLocalOrderId } from './utils/orderId';
 
@@ -39,10 +40,18 @@ export default function App() {
   const getAuthToken = useCallback(() => sessionStorage.getItem(AUTH_TOKEN_KEY), []);
   const sync = useSync({ enabled: Boolean(token), getAuthToken });
 
+  const persistLocalState = async (nextProducts = products, nextBundles = bundles, nextSales = sales) => {
+    await stateRepository.save({ products: nextProducts, bundles: nextBundles, sales: nextSales });
+  };
+
   const applyState = (data) => {
-    setProducts(data.products || []);
-    setBundles(data.bundles || []);
-    setSales(data.sales || []);
+    const nextProducts = data.products || [];
+    const nextBundles = data.bundles || [];
+    const nextSales = data.sales || [];
+    setProducts(nextProducts);
+    setBundles(nextBundles);
+    setSales(nextSales);
+    void persistLocalState(nextProducts, nextBundles, nextSales);
   };
 
   const logout = () => {
@@ -61,7 +70,13 @@ export default function App() {
       applyState(await requestJson('/api/pos'));
     } catch (err) {
       if (String(err.message).includes('인증')) logout();
-      else setError(err.message);
+      else {
+        const cached = await stateRepository.get();
+        if (cached) {
+          applyState(cached);
+          setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
+        } else setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -145,7 +160,7 @@ export default function App() {
       return line.qty <= 0 ? next.filter((_, i) => i !== index) : next;
     });
   };
-  const applyLocalSale = (saleCart) => {
+  const productsAfterSale = (sourceProducts, saleCart) => {
     const soldByProduct = new Map();
     for (const line of saleCart) {
       if (line.type === 'product') soldByProduct.set(line.id, (soldByProduct.get(line.id) || 0) + Number(line.qty || 0));
@@ -156,10 +171,13 @@ export default function App() {
       }
     }
 
-    setProducts((prev) => prev.map((product) => ({
+    return sourceProducts.map((product) => ({
       ...product,
       stock: Math.max(0, Number(product.stock || 0) - Number(soldByProduct.get(product.id) || 0)),
-    })));
+    }));
+  };
+  const applyLocalSale = (saleCart) => {
+    setProducts((prev) => productsAfterSale(prev, saleCart));
   };
   const finalizeSale = async (method) => {
     if (!cart.length || saving) return;
@@ -181,8 +199,11 @@ export default function App() {
         lastSyncAt: null,
       });
 
+      const nextProducts = productsAfterSale(products, saleCart);
+      const nextSales = [...sales, { id: localOrderId, time: createdAt, method, total, lines: saleCart.map(({ subItems, ...line }) => line) }];
       applyLocalSale(saleCart);
-      setSales((prev) => [...prev, { id: localOrderId, time: createdAt, method, total, lines: saleCart.map(({ subItems, ...line }) => line) }]);
+      setSales(nextSales);
+      void persistLocalState(nextProducts, bundles, nextSales);
       setCart([]);
       await sync.refreshPendingCount();
       void sync.syncNow();
