@@ -6,6 +6,7 @@ export interface OrderRepository {
   getPendingOrders(): Promise<StoredOrder[]>;
   countWaiting(): Promise<number>;
   updateStatus(id: number, syncStatus: SyncStatus, patch?: Partial<StoredOrder>): Promise<void>;
+  deletePendingByLocalOrderId(localOrderId: string): Promise<number>;
 }
 
 export class DexieOrderRepository implements OrderRepository {
@@ -30,6 +31,14 @@ export class DexieOrderRepository implements OrderRepository {
 
   async updateStatus(id: number, syncStatus: SyncStatus, patch: Partial<StoredOrder> = {}): Promise<void> {
     await db.orders.update(id, { ...patch, syncStatus });
+  }
+
+  async deletePendingByLocalOrderId(localOrderId: string): Promise<number> {
+    return db.orders
+      .where('localOrderId')
+      .equals(localOrderId)
+      .and((order) => order.syncStatus === 'PENDING' || order.syncStatus === 'FAILED')
+      .delete();
   }
 }
 

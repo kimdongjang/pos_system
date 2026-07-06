@@ -191,6 +191,24 @@ export default function App() {
       stock: Math.max(0, Number(product.stock || 0) - Number(soldByProduct.get(product.id) || 0)),
     }));
   };
+  const productsAfterVoidSale = (sourceProducts, sale) => {
+    const restoredByProduct = new Map();
+    for (const line of sale.lines || []) {
+      if (line.type === 'product') restoredByProduct.set(line.id, (restoredByProduct.get(line.id) || 0) + Number(line.qty || 0));
+      if (line.type === 'bundle') {
+        const bundle = bundles.find((b) => b.id === line.id);
+        for (const item of bundle?.items || []) {
+          restoredByProduct.set(item.productId, (restoredByProduct.get(item.productId) || 0) + Number(item.qty || 0) * Number(line.qty || 0));
+        }
+      }
+    }
+
+    return sourceProducts.map((product) => ({
+      ...product,
+      stock: Number(product.stock || 0) + Number(restoredByProduct.get(product.id) || 0),
+      stockQty: Number(product.stockQty ?? product.stock ?? 0) + Number(restoredByProduct.get(product.id) || 0),
+    }));
+  };
   const applyLocalSale = (saleCart) => {
     setProducts((prev) => productsAfterSale(prev, saleCart));
   };
@@ -276,9 +294,37 @@ export default function App() {
     ].map(escapeCsv).join(','));
     downloadBlob(`\uFEFFid,localOrderId,createdAt,syncStatus,retryCount,lastSyncAt,payload\n${rows.join('\n')}`, 'text/csv;charset=utf-8;', `orders_backup_${new Date().toISOString().slice(0, 10)}.csv`);
   };
-  const voidSale = (sale) => {
+  const voidSale = async (sale) => {
     if (!confirm('이 거래를 취소하고 재고를 복구할까요?')) return;
-    mutate('voidSale', { id: sale.id });
+    setSaving(true);
+    setError('');
+    try {
+      const nextProducts = productsAfterVoidSale(products, sale);
+      const nextSales = sales.filter((item) => item.id !== sale.id);
+      setProducts(nextProducts);
+      setSales(nextSales);
+      await persistLocalState(nextProducts, bundles, nextSales);
+
+      const removedPendingSale = await orderRepository.deletePendingByLocalOrderId(sale.id);
+      if (!removedPendingSale) {
+        const createdAt = new Date().toISOString();
+        await orderRepository.add({
+          localOrderId: `void_${sale.id}_${Date.now()}`,
+          createdAt,
+          payload: { action: 'voidSale', payload: { id: sale.id } },
+          syncStatus: 'PENDING',
+          retryCount: 0,
+          lastSyncAt: null,
+        });
+      }
+      await sync.refreshPendingCount();
+      void sync.syncNow();
+    } catch (err) {
+      alert(err.message || '판매 취소 처리에 실패했습니다.');
+      setError(err.message || '판매 취소 처리에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
   };
   const clearSalesWithPassword = () => {
     const password = prompt('판매 내역을 초기화하려면 로그인 패스워드를 입력해주세요.');
