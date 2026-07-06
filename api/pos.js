@@ -169,6 +169,47 @@ async function finalizeSale({ localOrderId, createdAt, method, total, cart }) {
   await sql`INSERT INTO pos_sales (id, time, method, total, lines) VALUES (${sale.id}, ${sale.time}, ${sale.method}, ${sale.total}, ${JSON.stringify(sale.lines)}::jsonb)`;
 }
 
+async function finalizeExternalSale(order) {
+  const items = Array.isArray(order.items) ? order.items : [];
+  if (!items.length) throw new Error('주문 상품이 비어 있습니다.');
+
+  await initDb();
+  const products = (await sql`SELECT id, name, price, product_code, goods_type, vtuber_name, creator_name FROM pos_products`).rows;
+  const cart = items.map((item) => {
+    const product = products.find((p) => (
+      p.product_code === item.productCode ||
+      p.id === item.productCode ||
+      p.id === item.id ||
+      (
+        p.goods_type === item.goodsType &&
+        p.vtuber_name === item.vtuberName &&
+        p.creator_name === item.creatorName
+      )
+    ));
+    const qty = Number(item.qty ?? item.quantity ?? item.count ?? 1) || 1;
+    return {
+      type: 'product',
+      id: product?.id || item.productCode || item.id,
+      productCode: item.productCode || product?.product_code || product?.id,
+      name: product?.name || productDisplayName(item),
+      unitPrice: Number(item.price ?? item.unitPrice ?? product?.price ?? 0) || 0,
+      qty,
+      goodsType: item.goodsType,
+      vtuberName: item.vtuberName,
+      creatorName: item.creatorName,
+    };
+  });
+
+  const method = order.paymentMethod === 'BANK_TRANSFER' || order.paymentMethod === 'transfer' ? 'transfer' : 'cash';
+  await finalizeSale({
+    localOrderId: order.localOrderId || order.orderId || uid(),
+    createdAt: order.createdAt || new Date().toISOString(),
+    method,
+    total: Number(order.totalAmount ?? order.total ?? cart.reduce((sum, line) => sum + line.unitPrice * line.qty, 0)) || 0,
+    cart,
+  });
+}
+
 async function voidSale(id) {
   await initDb();
   const sale = (await sql`SELECT lines FROM pos_sales WHERE id = ${id}`).rows[0];
@@ -192,7 +233,8 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
     const { action, payload } = req.body || {};
-    if (action === 'replaceProducts') await replaceProducts(payload?.products || []);
+    if (!action && Array.isArray(req.body?.items)) await finalizeExternalSale(req.body);
+    else if (action === 'replaceProducts') await replaceProducts(payload?.products || []);
     else if (action === 'replaceBundles') await replaceBundles(payload?.bundles || []);
     else if (action === 'finalizeSale') await finalizeSale(payload || {});
     else if (action === 'voidSale') await voidSale(payload?.id);
