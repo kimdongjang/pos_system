@@ -4,6 +4,35 @@ import { CURRENT_SEED_VERSION, getDefaultBundles, getDefaultProducts } from './l
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+function productDisplayName(product) {
+  if (product.name) return product.name;
+  return [product.vtuberName, product.goodsType, product.creatorName ? `(${product.creatorName})` : ''].filter(Boolean).join(' ') || '새 굿즈';
+}
+
+function normalizeProduct(product) {
+  const now = new Date().toISOString();
+  const productCode = product.productCode || product.id || uid();
+  const stockQty = Number(product.stockQty ?? product.stock ?? 0) || 0;
+  return {
+    id: String(product.id || productCode),
+    productCode: String(productCode),
+    goodsType: product.goodsType || product.name || '새 굿즈',
+    vtuberName: product.vtuberName || '',
+    creatorName: product.creatorName || '',
+    stockQty,
+    initialStockQty: Number(product.initialStockQty ?? stockQty) || 0,
+    size: product.size || null,
+    price: Number(product.price) || 0,
+    setCreatorName: product.setCreatorName || null,
+    setGroupName: product.setGroupName || null,
+    setPrice: product.setPrice == null ? null : Number(product.setPrice) || 0,
+    setDescription: product.setDescription || null,
+    isActive: product.isActive !== false,
+    createdAt: product.createdAt || now,
+    updatedAt: now,
+  };
+}
+
 function hasPostgresConnectionString() {
   return Boolean(
     process.env.POSTGRES_URL ||
@@ -24,6 +53,20 @@ async function initDb() {
   await sql`CREATE TABLE IF NOT EXISTS pos_products (id TEXT PRIMARY KEY, name TEXT NOT NULL, price INTEGER NOT NULL, stock INTEGER NOT NULL)`;
   await sql`CREATE TABLE IF NOT EXISTS pos_bundles (id TEXT PRIMARY KEY, name TEXT NOT NULL, price INTEGER NOT NULL, items JSONB NOT NULL)`;
   await sql`CREATE TABLE IF NOT EXISTS pos_sales (id TEXT PRIMARY KEY, time TIMESTAMPTZ NOT NULL, method TEXT NOT NULL, total INTEGER NOT NULL, lines JSONB NOT NULL)`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS product_code TEXT`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS goods_type TEXT`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS vtuber_name TEXT`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS creator_name TEXT`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS stock_qty INTEGER`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS initial_stock_qty INTEGER`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS size TEXT`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS set_creator_name TEXT`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS set_group_name TEXT`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS set_price INTEGER`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS set_description TEXT`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`;
 }
 
 async function seedIfNeeded() {
@@ -36,7 +79,8 @@ async function seedIfNeeded() {
   await sql`DELETE FROM pos_products`;
   await sql`DELETE FROM pos_bundles`;
   for (const p of getDefaultProducts()) {
-    await sql`INSERT INTO pos_products (id, name, price, stock) VALUES (${p.id}, ${p.name}, ${p.price}, ${p.stock})`;
+    const product = normalizeProduct(p);
+    await sql`INSERT INTO pos_products (id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at) VALUES (${product.id}, ${productDisplayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt})`;
   }
   for (const b of getDefaultBundles()) {
     await sql`INSERT INTO pos_bundles (id, name, price, items) VALUES (${b.id}, ${b.name}, ${b.price}, ${JSON.stringify(b.items)}::jsonb)`;
@@ -47,12 +91,31 @@ async function seedIfNeeded() {
 async function readState() {
   await seedIfNeeded();
   const [products, bundles, sales] = await Promise.all([
-    sql`SELECT id, name, price, stock FROM pos_products ORDER BY id`,
+    sql`SELECT id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at FROM pos_products WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY id`,
     sql`SELECT id, name, price, items FROM pos_bundles ORDER BY id`,
     sql`SELECT id, time, method, total, lines FROM pos_sales ORDER BY time ASC`,
   ]);
   return {
-    products: products.rows,
+    products: products.rows.map((p) => ({
+      id: p.id,
+      productCode: p.product_code || p.id,
+      goodsType: p.goods_type || p.name,
+      vtuberName: p.vtuber_name || '',
+      creatorName: p.creator_name || '',
+      stockQty: Number(p.stock_qty ?? p.stock ?? 0),
+      initialStockQty: Number(p.initial_stock_qty ?? p.stock_qty ?? p.stock ?? 0),
+      size: p.size || null,
+      price: Number(p.price) || 0,
+      setCreatorName: p.set_creator_name || null,
+      setGroupName: p.set_group_name || null,
+      setPrice: p.set_price == null ? null : Number(p.set_price) || 0,
+      setDescription: p.set_description || null,
+      isActive: p.is_active !== false,
+      createdAt: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
+      updatedAt: p.updated_at ? new Date(p.updated_at).toISOString() : new Date().toISOString(),
+      name: p.name || productDisplayName({ vtuberName: p.vtuber_name, goodsType: p.goods_type, creatorName: p.creator_name }),
+      stock: Number(p.stock_qty ?? p.stock ?? 0),
+    })),
     bundles: bundles.rows.map((b) => ({ ...b, items: b.items || [] })),
     sales: sales.rows.map((s) => ({ ...s, time: new Date(s.time).toISOString(), lines: s.lines || [] })),
   };
@@ -62,7 +125,8 @@ async function replaceProducts(products) {
   await initDb();
   await sql`DELETE FROM pos_products`;
   for (const p of products) {
-    await sql`INSERT INTO pos_products (id, name, price, stock) VALUES (${p.id || uid()}, ${p.name || '새 굿즈'}, ${Number(p.price) || 0}, ${Number(p.stock) || 0})`;
+    const product = normalizeProduct(p);
+    await sql`INSERT INTO pos_products (id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at) VALUES (${product.id}, ${productDisplayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt})`;
   }
 }
 
@@ -81,7 +145,7 @@ async function finalizeSale({ localOrderId, createdAt, method, total, cart }) {
   const exists = (await sql`SELECT id FROM pos_sales WHERE id = ${saleId}`).rows[0];
   if (exists) return;
 
-  const products = (await sql`SELECT id, stock FROM pos_products`).rows;
+  const products = (await sql`SELECT id, stock, stock_qty FROM pos_products`).rows;
   const soldByProduct = new Map();
   for (const line of cart) {
     if (line.type === 'product') soldByProduct.set(line.id, (soldByProduct.get(line.id) || 0) + Number(line.qty || 0));
@@ -95,10 +159,10 @@ async function finalizeSale({ localOrderId, createdAt, method, total, cart }) {
 
   for (const [productId, sold] of soldByProduct) {
     const product = products.find((p) => p.id === productId);
-    if (!product || product.stock < sold) throw new Error('재고가 부족합니다. 새로고침 후 다시 시도해주세요.');
+    if (!product || Number(product.stock_qty ?? product.stock ?? 0) < sold) throw new Error('재고가 부족합니다. 새로고침 후 다시 시도해주세요.');
   }
   for (const [productId, sold] of soldByProduct) {
-    await sql`UPDATE pos_products SET stock = stock - ${sold} WHERE id = ${productId}`;
+    await sql`UPDATE pos_products SET stock = stock - ${sold}, stock_qty = COALESCE(stock_qty, stock) - ${sold}, updated_at = NOW() WHERE id = ${productId}`;
   }
 
   const sale = { id: saleId, time: createdAt || new Date().toISOString(), method, total: Number(total) || 0, lines: cart.map(({ subItems, ...line }) => line) };
@@ -110,11 +174,11 @@ async function voidSale(id) {
   const sale = (await sql`SELECT lines FROM pos_sales WHERE id = ${id}`).rows[0];
   if (!sale) return;
   for (const line of sale.lines || []) {
-    if (line.type === 'product') await sql`UPDATE pos_products SET stock = stock + ${Number(line.qty) || 0} WHERE id = ${line.id}`;
+    if (line.type === 'product') await sql`UPDATE pos_products SET stock = stock + ${Number(line.qty) || 0}, stock_qty = COALESCE(stock_qty, stock) + ${Number(line.qty) || 0}, updated_at = NOW() WHERE id = ${line.id}`;
     if (line.type === 'bundle') {
       const bundle = (await sql`SELECT items FROM pos_bundles WHERE id = ${line.id}`).rows[0];
       for (const item of bundle?.items || []) {
-        await sql`UPDATE pos_products SET stock = stock + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)} WHERE id = ${item.productId}`;
+        await sql`UPDATE pos_products SET stock = stock + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)}, stock_qty = COALESCE(stock_qty, stock) + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)}, updated_at = NOW() WHERE id = ${item.productId}`;
       }
     }
   }
