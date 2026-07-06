@@ -1,4 +1,4 @@
-const CACHE_NAME = 'booth-pos-app-v1';
+const CACHE_NAME = 'booth-pos-app-v2';
 const APP_SHELL_URLS = ['/', '/index.html', '/pos.html'];
 
 self.addEventListener('install', (event) => {
@@ -28,7 +28,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(cacheFirst(request));
+  event.respondWith(staleWhileRevalidate(request));
 });
 
 async function networkFirstWithAppShellFallback(request) {
@@ -75,4 +75,17 @@ async function cacheFirst(request) {
   const response = await fetch(request);
   if (response.ok) await cache.put(request, response.clone());
   return response;
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request);
+  const network = fetch(request)
+    .then((response) => {
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => undefined);
+
+  return cached || await network || Response.error();
 }

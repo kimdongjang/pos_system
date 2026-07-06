@@ -22,6 +22,18 @@ const won = (n) => Number(n || 0).toLocaleString('ko-KR');
 const creatorNameOf = (product) => product?.creatorName?.trim() || '미지정';
 const productNameFromFields = (product) => [product.vtuberName, product.goodsType, product.creatorName ? `(${product.creatorName})` : ''].filter(Boolean).join(' ') || product.name || '새 굿즈';
 const productNameWithoutCreator = (product) => String(product?.name || '').replace(/\s*\([^)]*\)\s*$/, '').trim() || product?.name || '';
+const normalizeProductForClient = (product) => {
+  const stock = Number(product?.stock ?? product?.stockQty ?? 0) || 0;
+  const stockQty = Number(product?.stockQty ?? product?.stock ?? stock) || 0;
+
+  return {
+    ...product,
+    stock,
+    stockQty,
+    price: Number(product?.price ?? 0) || 0,
+    name: product?.name || productNameFromFields(product || {}),
+  };
+};
 
 async function requestJson(url, options = {}) {
   const token = sessionStorage.getItem(AUTH_TOKEN_KEY);
@@ -61,7 +73,7 @@ export default function App() {
   };
 
   const applyState = (data) => {
-    const nextProducts = data.products || [];
+    const nextProducts = (data.products || []).map(normalizeProductForClient);
     const nextBundles = data.bundles || [];
     const nextSales = data.sales || [];
     setProducts(nextProducts);
@@ -147,7 +159,7 @@ export default function App() {
     if (line.type === 'bundle') return sum + line.subItems.reduce((s, item) => s + (item.productId === productId ? item.qty * line.qty : 0), 0);
     return sum;
   }, 0);
-  const availableStock = (product, targetCart = cart) => Math.max(0, (product?.stock || 0) - reservedQty(product?.id, targetCart));
+  const availableStock = (product, targetCart = cart) => Math.max(0, Number(product?.stock ?? product?.stockQty ?? 0) - reservedQty(product?.id, targetCart));
   const bundleAvailable = (bundle, targetCart = cart) => {
     if (!bundle?.items?.length) return 0;
     return bundle.items.reduce((min, item) => {
