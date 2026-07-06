@@ -49,6 +49,7 @@ export default function App() {
   const [bundleName, setBundleName] = useState('');
   const [bundlePrice, setBundlePrice] = useState('');
   const [creatorFilter, setCreatorFilter] = useState('all');
+  const [logCreatorFilter, setLogCreatorFilter] = useState('all');
   const [sortByCreator, setSortByCreator] = useState(false);
   const getAuthToken = useCallback(() => sessionStorage.getItem(AUTH_TOKEN_KEY), []);
   const sync = useSync({ enabled: Boolean(token), getAuthToken });
@@ -283,6 +284,16 @@ export default function App() {
 
   const creators = useMemo(() => [...new Set(products.map(creatorNameOf))].sort((a, b) => a.localeCompare(b, 'ko-KR')), [products]);
   const creatorColors = useMemo(() => Object.fromEntries(creators.map((creator, index) => [creator, CREATOR_COLOR_PALETTE[index % CREATOR_COLOR_PALETTE.length]])), [creators]);
+  const productsById = useMemo(() => Object.fromEntries(products.map((product) => [product.id, product])), [products]);
+  const saleLineCreators = useCallback((line) => {
+    if (line.creatorName) return [line.creatorName];
+    if (line.type === 'product') return [creatorNameOf(productsById[line.id])];
+    if (line.type === 'bundle') {
+      const bundle = bundles.find((b) => b.id === line.id);
+      return [...new Set((bundle?.items || []).map((item) => creatorNameOf(productsById[item.productId])))];
+    }
+    return ['미지정'];
+  }, [bundles, productsById]);
   const visibleProducts = useMemo(() => {
     const filtered = creatorFilter === 'all' ? products : products.filter((p) => creatorNameOf(p) === creatorFilter);
     if (!sortByCreator) return filtered;
@@ -292,6 +303,11 @@ export default function App() {
       String(a.goodsType || a.name || '').localeCompare(String(b.goodsType || b.name || ''), 'ko-KR')
     ));
   }, [creatorFilter, products, sortByCreator]);
+  const visibleSales = useMemo(() => {
+    const source = sales.slice().reverse();
+    if (logCreatorFilter === 'all') return source;
+    return source.filter((sale) => sale.lines.some((line) => saleLineCreators(line).includes(logCreatorFilter)));
+  }, [logCreatorFilter, saleLineCreators, sales]);
 
   if (!token) return <LoginPage loginId={loginId} setLoginId={setLoginId} loginPassword={loginPassword} setLoginPassword={setLoginPassword} loginError={loginError} onSubmit={login} />;
   if (loading) return <div className="flex h-full items-center justify-center bg-paper text-register"><div className="rounded-xl border border-line bg-white p-6 font-bold">DB에서 데이터를 불러오는 중...</div></div>;
@@ -338,7 +354,7 @@ export default function App() {
       <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#6b6555]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>
     </div></main>}
 
-    {screen === 'log' && <main className="flex-1 overflow-y-auto p-4 md:p-6"><div className="mb-4 grid gap-3.5 md:grid-cols-4"><Stat label="총 판매액" value={`${won(stats.total)}원`} /><Stat label="현금" value={`${won(stats.cash)}원`} /><Stat label="계좌이체" value={`${won(stats.transfer)}원`} /><Stat label="거래 건수" value={sales.length} /></div><div className="mb-2.5 flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={exportCsv}>CSV로 내보내기</button><button className="rounded-md bg-danger px-3 py-2 text-xs text-white" onClick={() => confirm('모든 판매 내역을 삭제할까요? (재고는 복구되지 않습니다)') && mutate('clearSales')}>판매 내역 초기화</button></div><table className="w-full border-collapse bg-white text-[12.5px]"><thead><tr className="bg-register text-left text-[#eef3ee]"><th className="p-2">시간</th><th className="p-2">결제수단</th><th className="p-2">구성</th><th className="p-2">금액</th><th /></tr></thead><tbody>{sales.slice().reverse().map((s) => <tr key={s.id}><td className="mono border-b border-line p-2">{new Date(s.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</td><td className="border-b border-line p-2"><span className={`rounded px-2 py-0.5 text-[11px] text-white ${s.method === 'cash' ? 'bg-cash' : 'bg-transfer'}`}>{s.method === 'cash' ? '현금' : '계좌이체'}</span></td><td className="border-b border-line p-2">{s.lines.map((l) => `${l.name} x${l.qty}`).join(', ')}</td><td className="mono border-b border-line p-2">{won(s.total)}원</td><td className="border-b border-line p-2"><button className="rounded border border-danger px-2 py-1 text-[10px] text-danger" onClick={() => voidSale(s)}>취소</button></td></tr>)}</tbody></table></main>}
+    {screen === 'log' && <main className="flex-1 overflow-y-auto p-4 md:p-6"><div className="mb-4 grid gap-3.5 md:grid-cols-4"><Stat label="총 판매액" value={`${won(stats.total)}원`} /><Stat label="현금" value={`${won(stats.cash)}원`} /><Stat label="계좌이체" value={`${won(stats.transfer)}원`} /><Stat label="거래 건수" value={sales.length} /></div><div className="mb-3 rounded-[10px] border border-line bg-white p-3"><div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-1.5 text-xs font-bold text-[#6b6555]">제작자별 내역<select className="rounded border border-line bg-[#fbfaf5] px-2 py-1.5 text-xs text-ink" value={logCreatorFilter} onChange={(e) => setLogCreatorFilter(e.target.value)}><option value="all">전체</option>{creators.map((creator) => <option key={creator} value={creator}>{creator}</option>)}</select></label><span className="text-[11px] text-[#8a8370]">표시 {visibleSales.length}/{sales.length}건</span></div><div className="mt-2 flex flex-wrap gap-1.5">{creators.map((creator) => <button key={creator} type="button" onClick={() => setLogCreatorFilter(creator)} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${logCreatorFilter === creator ? 'ring-2 ring-amber-pos' : ''}`} style={{ backgroundColor: creatorColors[creator]?.bg, color: creatorColors[creator]?.text, borderColor: creatorColors[creator]?.border }}>{creator}</button>)}{logCreatorFilter !== 'all' && <button type="button" onClick={() => setLogCreatorFilter('all')} className="rounded-full border border-line bg-[#fbfaf5] px-2 py-1 text-[11px] text-[#6b6555]">전체 보기</button>}</div></div><div className="mb-2.5 flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={exportCsv}>CSV로 내보내기</button><button className="rounded-md bg-danger px-3 py-2 text-xs text-white" onClick={() => confirm('모든 판매 내역을 삭제할까요? (재고는 복구되지 않습니다)') && mutate('clearSales')}>판매 내역 초기화</button></div><table className="w-full border-collapse bg-white text-[12.5px]"><thead><tr className="bg-register text-left text-[#eef3ee]"><th className="p-2">시간</th><th className="p-2">결제수단</th><th className="p-2">구성</th><th className="p-2">금액</th><th /></tr></thead><tbody>{visibleSales.map((s) => <tr key={s.id}><td className="mono border-b border-line p-2">{new Date(s.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</td><td className="border-b border-line p-2"><span className={`rounded px-2 py-0.5 text-[11px] text-white ${s.method === 'cash' ? 'bg-cash' : 'bg-transfer'}`}>{s.method === 'cash' ? '현금' : '계좌이체'}</span></td><td className="border-b border-line p-2"><div className="flex flex-col gap-1">{s.lines.map((l, index) => <div key={`${l.type}-${l.id}-${index}`} className="flex flex-wrap items-center gap-1.5"><span>{l.name} x{l.qty}</span>{saleLineCreators(l).map((creator) => <span key={creator} className="rounded-full border px-1.5 py-0.5 text-[10px] font-bold" style={{ backgroundColor: creatorColors[creator]?.bg, color: creatorColors[creator]?.text, borderColor: creatorColors[creator]?.border }}>{creator}</span>)}</div>)}</div></td><td className="mono border-b border-line p-2">{won(s.total)}원</td><td className="border-b border-line p-2"><button className="rounded border border-danger px-2 py-1 text-[10px] text-danger" onClick={() => voidSale(s)}>취소</button></td></tr>)}</tbody></table></main>}
   </div>;
 }
 
