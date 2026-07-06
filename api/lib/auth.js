@@ -12,6 +12,10 @@ export function validateAdmin(id, password) {
   return id === getAdminId() && Boolean(password) && password === getAdminPassword();
 }
 
+export function validateAdminPassword(password) {
+  return Boolean(password) && password === getAdminPassword();
+}
+
 export function createToken(id) {
   const payload = Buffer.from(JSON.stringify({ id, iat: Date.now() })).toString('base64url');
   const signature = crypto.createHmac('sha256', getAuthSecret()).update(payload).digest('base64url');

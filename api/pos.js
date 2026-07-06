@@ -1,5 +1,5 @@
 import { sql } from '@vercel/postgres';
-import { requireAuth } from './lib/auth.js';
+import { requireAuth, validateAdminPassword } from './lib/auth.js';
 import { CURRENT_SEED_VERSION, getDefaultBundles, getDefaultProducts } from './lib/defaultData.js';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -226,6 +226,12 @@ async function voidSale(id) {
   await sql`DELETE FROM pos_sales WHERE id = ${id}`;
 }
 
+async function clearSales(password) {
+  if (!validateAdminPassword(password)) throw new Error('패스워드가 올바르지 않습니다.');
+  await initDb();
+  await sql`DELETE FROM pos_sales`;
+}
+
 export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
   try {
@@ -238,7 +244,7 @@ export default async function handler(req, res) {
     else if (action === 'replaceBundles') await replaceBundles(payload?.bundles || []);
     else if (action === 'finalizeSale') await finalizeSale(payload || {});
     else if (action === 'voidSale') await voidSale(payload?.id);
-    else if (action === 'clearSales') await sql`DELETE FROM pos_sales`;
+    else if (action === 'clearSales') await clearSales(payload?.password);
     else if (action === 'resetDefaults') { await replaceProducts(getDefaultProducts()); await replaceBundles(getDefaultBundles()); }
     else return res.status(400).json({ error: '알 수 없는 작업입니다.' });
 
