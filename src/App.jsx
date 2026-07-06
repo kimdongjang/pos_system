@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SyncStatus } from './components/SyncStatus';
 import { orderRepository } from './database/orderRepository';
 import { stateRepository } from './database/stateRepository';
@@ -6,9 +6,20 @@ import { useSync } from './hooks/useSync';
 import { createLocalOrderId } from './utils/orderId';
 
 const AUTH_TOKEN_KEY = 'pos_admin_token';
+const CREATOR_COLOR_PALETTE = [
+  { bg: '#fef3c7', text: '#92400e', border: '#f59e0b' },
+  { bg: '#dbeafe', text: '#1e40af', border: '#3b82f6' },
+  { bg: '#dcfce7', text: '#166534', border: '#22c55e' },
+  { bg: '#fce7f3', text: '#9d174d', border: '#ec4899' },
+  { bg: '#ede9fe', text: '#5b21b6', border: '#8b5cf6' },
+  { bg: '#cffafe', text: '#155e75', border: '#06b6d4' },
+  { bg: '#fee2e2', text: '#991b1b', border: '#ef4444' },
+  { bg: '#e0e7ff', text: '#3730a3', border: '#6366f1' },
+];
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const won = (n) => Number(n || 0).toLocaleString('ko-KR');
+const creatorNameOf = (product) => product?.creatorName?.trim() || '미지정';
 
 async function requestJson(url, options = {}) {
   const token = sessionStorage.getItem(AUTH_TOKEN_KEY);
@@ -37,6 +48,8 @@ export default function App() {
   const [bundleRows, setBundleRows] = useState([{ productId: '', qty: 1 }]);
   const [bundleName, setBundleName] = useState('');
   const [bundlePrice, setBundlePrice] = useState('');
+  const [creatorFilter, setCreatorFilter] = useState('all');
+  const [sortByCreator, setSortByCreator] = useState(false);
   const getAuthToken = useCallback(() => sessionStorage.getItem(AUTH_TOKEN_KEY), []);
   const sync = useSync({ enabled: Boolean(token), getAuthToken });
 
@@ -268,6 +281,18 @@ export default function App() {
     transfer: sales.filter((x) => x.method === 'transfer').reduce((s, x) => s + x.total, 0),
   };
 
+  const creators = useMemo(() => [...new Set(products.map(creatorNameOf))].sort((a, b) => a.localeCompare(b, 'ko-KR')), [products]);
+  const creatorColors = useMemo(() => Object.fromEntries(creators.map((creator, index) => [creator, CREATOR_COLOR_PALETTE[index % CREATOR_COLOR_PALETTE.length]])), [creators]);
+  const visibleProducts = useMemo(() => {
+    const filtered = creatorFilter === 'all' ? products : products.filter((p) => creatorNameOf(p) === creatorFilter);
+    if (!sortByCreator) return filtered;
+    return [...filtered].sort((a, b) => (
+      creatorNameOf(a).localeCompare(creatorNameOf(b), 'ko-KR') ||
+      String(a.vtuberName || '').localeCompare(String(b.vtuberName || ''), 'ko-KR') ||
+      String(a.goodsType || a.name || '').localeCompare(String(b.goodsType || b.name || ''), 'ko-KR')
+    ));
+  }, [creatorFilter, products, sortByCreator]);
+
   if (!token) return <LoginPage loginId={loginId} setLoginId={setLoginId} loginPassword={loginPassword} setLoginPassword={setLoginPassword} loginError={loginError} onSubmit={login} />;
   if (loading) return <div className="flex h-full items-center justify-center bg-paper text-register"><div className="rounded-xl border border-line bg-white p-6 font-bold">DB에서 데이터를 불러오는 중...</div></div>;
 
@@ -281,7 +306,23 @@ export default function App() {
     {screen === 'pos' && <main className="flex min-h-0 flex-1">
       <section className="flex-[1.35] overflow-y-auto p-3.5">
         <SectionTitle>굿즈</SectionTitle>
-        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">{products.map((p) => <ItemButton key={p.id} soldout={availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={p.name} price={p.price} onClick={() => addProduct(p)} />)}</div>
+        <div className="mb-3 rounded-[10px] border border-line bg-white p-3 shadow-[0_2px_0_#e7e1d1]">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-xs font-bold text-[#6b6555]">제작자
+              <select className="rounded border border-line bg-[#fbfaf5] px-2 py-1.5 text-xs text-ink" value={creatorFilter} onChange={(e) => { setCreatorFilter(e.target.value); setSortByCreator(e.target.value !== 'all' || sortByCreator); }}>
+                <option value="all">전체</option>
+                {creators.map((creator) => <option key={creator} value={creator}>{creator}</option>)}
+              </select>
+            </label>
+            <button type="button" onClick={() => setSortByCreator((prev) => !prev)} className={`rounded-md border px-3 py-1.5 text-xs font-bold ${sortByCreator ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-[#fbfaf5] text-[#6b6555]'}`}>작가명순 정렬 {sortByCreator ? 'ON' : 'OFF'}</button>
+            <span className="text-[11px] text-[#8a8370]">표시 {visibleProducts.length}/{products.length}개</span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {creators.map((creator) => <button key={creator} type="button" onClick={() => { setCreatorFilter(creator); setSortByCreator(true); }} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${creatorFilter === creator ? 'ring-2 ring-amber-pos' : ''}`} style={{ backgroundColor: creatorColors[creator]?.bg, color: creatorColors[creator]?.text, borderColor: creatorColors[creator]?.border }}>{creator}</button>)}
+            {creatorFilter !== 'all' && <button type="button" onClick={() => setCreatorFilter('all')} className="rounded-full border border-line bg-[#fbfaf5] px-2 py-1 text-[11px] text-[#6b6555]">전체 보기</button>}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">{visibleProducts.map((p) => <ItemButton key={p.id} soldout={availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={p.name} price={p.price} creatorName={creatorNameOf(p)} creatorColor={creatorColors[creatorNameOf(p)]} onClick={() => addProduct(p)} />)}</div>
         {!!bundles.length && <><SectionTitle>세트 할인</SectionTitle><div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">{bundles.map((b) => <ItemButton key={b.id} bundle soldout={bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div></>}
       </section>
       <aside className="flex w-[390px] min-w-[340px] max-w-[420px] flex-col bg-register text-[#eef3ee]">
@@ -315,7 +356,7 @@ function LoginPage({ loginId, setLoginId, loginPassword, setLoginPassword, login
 }
 
 function SectionTitle({ children }) { return <div className="my-3.5 flex items-center gap-2 text-xs uppercase tracking-[1.5px] text-[#6b6555] after:h-px after:flex-1 after:bg-line">{children}</div>; }
-function ItemButton({ name, price, stock, soldout, bundle, onClick }) { return <button disabled={soldout} onClick={onClick} className={`relative flex min-h-[74px] flex-col justify-between rounded-[10px] border p-3 text-left shadow-[0_2px_0_#d9d4c4] active:translate-y-0.5 active:shadow-none disabled:cursor-not-allowed disabled:opacity-40 ${bundle ? 'border-amber-pos bg-[#fff8ea]' : 'border-line bg-white'}`}>{bundle && <span className="absolute left-2 top-2 rounded bg-amber-pos px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-white">SET</span>}<span className="absolute right-2 top-2 rounded-lg bg-[#f1eee2] px-1.5 py-0.5 text-[10px] text-[#8a8370]">{stock}</span><span className={`text-sm font-semibold leading-tight ${bundle ? 'mt-3.5' : ''}`}>{name}</span><span className={`mt-1.5 text-[15px] font-bold ${bundle ? 'text-amber-pos' : 'text-register-2'}`}>{won(price)}원</span></button>; }
+function ItemButton({ name, price, stock, soldout, bundle, creatorName, creatorColor, onClick }) { return <button disabled={soldout} onClick={onClick} className={`relative flex min-h-[82px] flex-col justify-between rounded-[10px] border p-3 text-left shadow-[0_2px_0_#d9d4c4] active:translate-y-0.5 active:shadow-none disabled:cursor-not-allowed disabled:opacity-40 ${bundle ? 'border-amber-pos bg-[#fff8ea]' : 'border-line bg-white'}`}>{bundle && <span className="absolute left-2 top-2 rounded bg-amber-pos px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-white">SET</span>}<span className="absolute right-2 top-2 rounded-lg bg-[#f1eee2] px-1.5 py-0.5 text-[10px] text-[#8a8370]">{stock}</span><span className={`text-sm font-semibold leading-tight ${bundle ? 'mt-3.5' : 'mt-4'}`}>{name}</span><div className="mt-2 flex items-end justify-between gap-2"><span className={`text-[15px] font-bold ${bundle ? 'text-amber-pos' : 'text-register-2'}`}>{won(price)}원</span>{creatorName && <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold" style={{ backgroundColor: creatorColor?.bg, color: creatorColor?.text, borderColor: creatorColor?.border }}>{creatorName}</span>}</div></button>; }
 function Panel({ title, children }) { return <section className="rounded-[10px] border border-line bg-white p-3.5"><h2 className="mb-2.5 text-[15px] font-bold">{title}</h2>{children}</section>; }
 function Input({ value, onChange, className = '', ...props }) { return <input {...props} value={value} onChange={(e) => onChange(e.target.value)} className={`w-full rounded border border-line p-1.5 text-[13px] ${className}`} />; }
 function Stat({ label, value }) { return <div className="rounded-[10px] border border-line bg-white p-3.5"><div className="text-[11px] uppercase tracking-wide text-[#8a8370]">{label}</div><div className="mono mt-1 text-2xl font-bold">{value}</div></div>; }
