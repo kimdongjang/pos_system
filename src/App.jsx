@@ -362,6 +362,11 @@ export default function App() {
       String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR')
     ));
   }, [creatorFilter, products]);
+  const bundleCreators = useCallback((bundle) => [...new Set((bundle?.items || []).map((item) => creatorNameOf(productsById[item.productId])))], [productsById]);
+  const visibleBundles = useMemo(() => {
+    if (creatorFilter === 'all') return bundles;
+    return bundles.filter((bundle) => bundleCreators(bundle).includes(creatorFilter));
+  }, [bundleCreators, bundles, creatorFilter]);
   const visibleSales = useMemo(() => {
     const source = sales.slice().reverse();
     if (logCreatorFilter === 'all') return source;
@@ -392,7 +397,7 @@ export default function App() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">{visibleProducts.map((p) => <ItemButton key={p.id} soldout={availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={productNameWithoutCreator(p)} price={p.price} creatorName={creatorNameOf(p)} creatorColor={creatorColors[creatorNameOf(p)]} onClick={() => addProduct(p)} />)}</div>
-        {!!bundles.length && <><SectionTitle>세트 할인</SectionTitle><div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">{bundles.map((b) => <ItemButton key={b.id} bundle soldout={bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div></>}
+        {!!visibleBundles.length && <><SectionTitle>세트 할인</SectionTitle><div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">{visibleBundles.map((b) => <ItemButton key={b.id} bundle soldout={bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div></>}
       </section>
       <aside className="flex w-[390px] min-w-[340px] max-w-[420px] flex-col bg-register text-[#eef3ee]">
         <div className="border-b border-dashed border-white/25 px-4.5 py-3.5"><div className="text-[11px] uppercase tracking-[2px] text-[#9db3a8]">합계</div><div className="text-[34px] font-bold">{won(total)}<span className="ml-1 text-lg text-[#9db3a8]">원</span></div></div>
