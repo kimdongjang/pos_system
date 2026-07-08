@@ -568,11 +568,7 @@ function ProductSettingsPanel({ products, bundles, persistProducts, persistCatal
     setDraftBundles((prev) => prev.map((b) => ({ ...b, items: b.items.filter((it) => it.productId !== productId) })).filter((b) => b.items.length));
   };
 
-  return <Panel title="굿즈 목록 (최신 상품 타입)" actions={<button className="rounded-md bg-cash px-4 py-2 text-[13px] font-bold text-white disabled:cursor-not-allowed disabled:bg-[#b8b1a1]" disabled={!hasChanges || saving} onClick={saveChanges}>{saving ? '저장 중...' : '저장'}</button>}>
-    <div className="mb-2 flex flex-wrap gap-2">
-      <button className="rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addProduct}>+ 굿즈 추가</button>
-      <button className="rounded-md bg-danger px-3.5 py-2 text-[13px] text-white" onClick={onResetDefaults}>기본 44종 목록으로 초기화</button>
-    </div>
+  return <Panel title="굿즈 목록 (최신 상품 타입)" actions={<div className="flex flex-wrap justify-end gap-2"><button className="rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addProduct}>+ 굿즈 추가</button><button className="rounded-md bg-danger px-3.5 py-2 text-[13px] text-white" onClick={onResetDefaults}>기본 44종 목록으로 초기화</button><button className="rounded-md bg-cash px-4 py-2 text-[13px] font-bold text-white disabled:cursor-not-allowed disabled:bg-[#b8b1a1]" disabled={!hasChanges || saving} onClick={saveChanges}>{saving ? '저장 중...' : '저장'}</button></div>}>
     <div className="overflow-x-auto">
       <table className="min-w-[940px] w-full border-collapse text-[12px]">
         <thead><tr className="text-left"><th className="border-b border-line p-1">코드</th><th className="border-b border-line p-1">버튜버</th><th className="border-b border-line p-1">굿즈종류</th><th className="border-b border-line p-1">제작자</th><th className="border-b border-line p-1">가격</th><th className="border-b border-line p-1">현재재고</th><th className="border-b border-line p-1">초기재고</th><th className="border-b border-line p-1">세트명</th><th className="border-b border-line p-1">세트가</th><th /></tr></thead>
