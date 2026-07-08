@@ -156,6 +156,40 @@ async function updateProduct(productInput) {
   if (result.rowCount === 0) throw new Error('수정할 상품을 찾을 수 없습니다. 새 상품은 + 굿즈 추가 후 저장해주세요.');
 }
 
+async function saveCatalog({ products = [], bundles = [] }) {
+  await initDb();
+  await sql`UPDATE pos_products SET is_active = FALSE, updated_at = NOW()`;
+  for (const p of products) {
+    const product = normalizeProduct(p);
+    await sql`
+      INSERT INTO pos_products (id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at)
+      VALUES (${product.id}, ${productDisplayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, TRUE, ${product.createdAt}, ${product.updatedAt})
+      ON CONFLICT (id) DO UPDATE
+      SET name = EXCLUDED.name,
+          price = EXCLUDED.price,
+          stock = EXCLUDED.stock,
+          product_code = EXCLUDED.product_code,
+          goods_type = EXCLUDED.goods_type,
+          vtuber_name = EXCLUDED.vtuber_name,
+          creator_name = EXCLUDED.creator_name,
+          stock_qty = EXCLUDED.stock_qty,
+          initial_stock_qty = EXCLUDED.initial_stock_qty,
+          size = EXCLUDED.size,
+          set_creator_name = EXCLUDED.set_creator_name,
+          set_group_name = EXCLUDED.set_group_name,
+          set_price = EXCLUDED.set_price,
+          set_description = EXCLUDED.set_description,
+          is_active = TRUE,
+          updated_at = NOW()
+    `;
+  }
+
+  await sql`DELETE FROM pos_bundles`;
+  for (const b of bundles) {
+    await sql`INSERT INTO pos_bundles (id, name, price, items) VALUES (${b.id || uid()}, ${b.name || '새 세트'}, ${Number(b.price) || 0}, ${JSON.stringify(b.items || [])}::jsonb)`;
+  }
+}
+
 async function upsertDefaultCatalog() {
   await initDb();
   for (const p of getDefaultProducts()) {
@@ -305,6 +339,7 @@ export default async function handler(req, res) {
     if (!action && Array.isArray(req.body?.items)) await finalizeExternalSale(req.body);
     else if (action === 'replaceProducts') await replaceProducts(payload?.products || []);
     else if (action === 'updateProduct') await updateProduct(payload?.product);
+    else if (action === 'saveCatalog') await saveCatalog(payload || {});
     else if (action === 'replaceBundles') await replaceBundles(payload?.bundles || []);
     else if (action === 'finalizeSale') await finalizeSale(payload || {});
     else if (action === 'voidSale') await voidSale(payload?.id);
